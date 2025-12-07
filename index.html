@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Do / Schedule / Delegate Board (Persistent)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+body { font-family: Arial, sans-serif; background:#f5f5f5; padding:20px; }
+h1 { text-align:center; margin-bottom:18px; }
+
+.board {
+display:flex; gap:20px; justify-content:center; flex-wrap:wrap;
+}
+.tile {
+background:#fff; padding:16px; border-radius:12px;
+width:320px; box-shadow:0 4px 10px rgba(0,0,0,0.12);
+}
+.tile-title { font-size:20px; font-weight:bold; margin-bottom:10px; }
+.tile-do { border-top:8px solid #e53935; background:#ffebee; }
+.tile-schedule { border-top:8px solid #43a047; background:#e8f5e9; }
+.tile-delegate { border-top:8px solid #fdd835; background:#fffde7; }
+
+textarea { width:100%; height:70px; padding:8px; resize:vertical; box-sizing:border-box; }
+button.add-btn {
+width:100%; padding:8px; margin-top:8px;
+background:#0288d1; color:white; border:none; border-radius:6px; cursor:pointer;
+}
+.deadline-input { margin-top:8px; display:flex; flex-direction:column; font-size:0.9rem; }
+.deadline-input label { margin-bottom:4px; }
+.deadline-input input[type="date"] {
+padding:6px; border-radius:4px; border:1px solid #bbb; width:100%;
+}
+
+ul { list-style:none; padding:0; margin-top:12px; max-height:420px; overflow:auto; }
+li {
+background:white; border:1px solid #ccc; border-radius:6px;
+padding:8px; margin-bottom:8px; display:flex; flex-direction:column;
+}
+.row { display:flex; align-items:center; gap:8px; }
+.task-text { word-break:break-word; flex: 1 1 auto; }
+.delete-btn { margin-left:8px; background:#c62828; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px; }
+.completed { text-decoration:line-through; color:#444; }
+.date-note, .deadline-note {
+font-size:0.82rem; font-style:italic; margin-left:26px; color:#444;
+}
+.overdue { color:#d32f2f; font-weight:bold; margin-left:26px; font-size:0.85rem; }
+.meta-row { display:flex; gap:10px; align-items:center; margin-top:6px; }
+.small-btn { padding:4px 8px; border-radius:5px; border:none; cursor:pointer; font-size:12px; }
+.clear-btn { background:#9e9e9e; color:white; }
+.footer { text-align:center; margin-top:14px; font-size:0.9rem; color:#666; }
+</style>
+</head>
+<body>
+
+<h1>Do / Schedule / Delegate</h1>
+
+<div class="board">
+
+<!-- DO Panel -->
+<div class="tile tile-do" data-panel="do">
+<p class="tile-title">Do</p>
+<textarea placeholder="Enter a comment/task..." data-input-text></textarea>
+
+<div class="deadline-input">
+<label for="deadline-do">Deadline date:</label>
+<input type="date" id="deadline-do" data-input-deadline>
+</div>
+
+<button class="add-btn" onclick="addComment('do')">Add Comment</button>
+<ul id="list-do"></ul>
+</div>
+
+<!-- SCHEDULE Panel -->
+<div class="tile tile-schedule" data-panel="schedule">
+<p class="tile-title">Schedule</p>
+<textarea placeholder="Enter a comment/task..." data-input-text></textarea>
+
+<div class="deadline-input">
+<label for="deadline-schedule">Deadline date:</label>
+<input type="date" id="deadline-schedule" data-input-deadline>
+</div>
+
+<button class="add-btn" onclick="addComment('schedule')">Add Comment</button>
+<ul id="list-schedule"></ul>
+</div>
+
+<!-- DELEGATE Panel -->
+<div class="tile tile-delegate" data-panel="delegate">
+<p class="tile-title">Delegate</p>
+<textarea placeholder="Enter a comment/task..." data-input-text></textarea>
+
+<div class="deadline-input">
+<label for="deadline-delegate">Deadline date:</label>
+<input type="date" id="deadline-delegate" data-input-deadline>
+</div>
+
+<button class="add-btn" onclick="addComment('delegate')">Add Comment</button>
+<ul id="list-delegate"></ul>
+</div>
+
+</div>
+
+<div class="footer">
+Saved locally in your browser (localStorage). Tasks remain on this device & browser.
+</div>
+
+<script>
+/* ========== Data model & localStorage ========== */
+const STORAGE_KEY = 'dsd_tasks_v1'; // change version if structure changes
+
+// Default structure
+const defaultData = {
+do: [],
+schedule: [],
+delegate: []
+};
+
+function loadData() {
+try {
+const raw = localStorage.getItem(STORAGE_KEY);
+if (!raw) return JSON.parse(JSON.stringify(defaultData));
+const parsed = JSON.parse(raw);
+// ensure keys exist
+return Object.assign(JSON.parse(JSON.stringify(defaultData)), parsed);
+} catch (e) {
+console.error('Failed to load saved tasks:', e);
+return JSON.parse(JSON.stringify(defaultData));
+}
+}
+
+function saveData() {
+try {
+localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+} catch (e) {
+console.error('Failed to save tasks:', e);
+}
+}
+
+/* ========== State ========== */
+let state = loadData();
+
+/* ========== Utilities ========== */
+
+function uid() {
+return Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+}
+
+function formatDateTime(dateStrOrObj) {
+if (!dateStrOrObj) return '';
+const d = (typeof dateStrOrObj === 'string') ? new Date(dateStrOrObj) : dateStrOrObj;
+if (isNaN(d)) return dateStrOrObj;
+// human friendly: dd-mm-yyyy HH:MM
+const dd = String(d.getDate()).padStart(2,'0');
+const mm = String(d.getMonth()+1).padStart(2,'0');
+const yyyy = d.getFullYear();
+const hh = String(d.getHours()).padStart(2,'0');
+const min = String(d.getMinutes()).padStart(2,'0');
+return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+}
+
+function todayISO() {
+return new Date().toISOString().split('T')[0];
+}
+
+/* ========== Rendering ========== */
+
+function clearList(panel) {
+const ul = document.getElementById(`list-${panel}`);
+ul.innerHTML = '';
+}
+
+function renderAll() {
+['do','schedule','delegate'].forEach(panel => {
+clearList(panel);
+state[panel].forEach(task => renderTask(panel, task));
+});
+}
+
+function renderTask(panel, task) {
+const ul = document.getElementById(`list-${panel}`);
+const li = document.createElement('li');
+li.dataset.id = task.id;
+
+// Build inner HTML
+const checked = task.completed ? 'checked' : '';
+const completedClass = task.completed ? 'completed' : '';
+const deadlineHtml = task.deadline ? `<div class="deadline-note">Deadline: ${task.deadline}</div>` : '';
+const completedNote = task.completedAt ? `<div class="date-note">Completed on ${formatDateTime(task.completedAt)}</div>` : '<div class="date-note"></div>';
+const overdueHtml = task.deadline ? `<div class="overdue" style="display:none;">⚠ OVERDUE</div>` : '';
+
+li.innerHTML = `
+<div class="row">
+<input type="checkbox" ${checked} data-action="toggle-complete">
+<div class="task-text ${completedClass}">${escapeHtml(task.text)}</div>
+<button class="delete-btn" data-action="delete">Delete</button>
+</div>
+${deadlineHtml}
+${overdueHtml}
+${completedNote}
+`;
+
+// events
+li.querySelector('[data-action="toggle-complete"]').addEventListener('change', (e) => {
+toggleComplete(panel, task.id, e.target.checked);
+});
+li.querySelector('[data-action="delete"]').addEventListener('click', () => {
+deleteTask(panel, task.id);
+});
+
+ul.appendChild(li);
+
+// initial overdue check
+if (task.deadline) checkOverdueForElement(li, task);
+}
+
+/* simple HTML escaper for user text */
+function escapeHtml(str) {
+return String(str)
+.replaceAll('&','&amp;')
+.replaceAll('<','&lt;')
+.replaceAll('>','&gt;')
+.replaceAll('"','&quot;')
+.replaceAll("'", '&#039;');
+}
+
+/* ========== CRUD operations ========== */
+
+function addComment(panel) {
+const tile = document.querySelector(`.tile[data-panel="${panel}"]`);
+const textEl = tile.querySelector('[data-input-text]');
+const deadlineEl = tile.querySelector('[data-input-deadline]');
+const text = (textEl.value || '').trim();
+if (!text) return;
+
+const deadline = deadlineEl.value || ''; // yyyy-mm-dd or ''
+
+const task = {
+id: uid(),
+text,
+deadline, // store as ISO date string yyyy-mm-dd
+completed: false,
+completedAt: null,
+createdAt: new Date().toISOString()
+};
+
+state[panel].push(task);
+saveData();
+renderTask(panel, task);
+
+// clear inputs
+textEl.value = '';
+if (deadlineEl) deadlineEl.value = '';
+}
+
+function toggleComplete(panel, id, isComplete) {
+const list = state[panel];
+const idx = list.findIndex(t => t.id === id);
+if (idx === -1) return;
+list[idx].completed = !!isComplete;
+list[idx].completedAt = isComplete ? new Date().toISOString() : null;
+saveData();
+
+// update DOM
+const li = document.querySelector(`#list-${panel} li[data-id="${id}"]`);
+if (!li) return;
+const txt = li.querySelector('.task-text');
+const dateNote = li.querySelector('.date-note');
+const overdueEl = li.querySelector('.overdue');
+
+if (isComplete) {
+txt.classList.add('completed');
+dateNote.textContent = `Completed on ${formatDateTime(list[idx].completedAt)}`;
+if (overdueEl) overdueEl.style.display = 'none';
+} else {
+txt.classList.remove('completed');
+dateNote.textContent = '';
+if (list[idx].deadline) checkOverdueForElement(li, list[idx]);
+}
+}
+
+function deleteTask(panel, id) {
+state[panel] = state[panel].filter(t => t.id !== id);
+saveData();
+const li = document.querySelector(`#list-${panel} li[data-id="${id}"]`);
+if (li) li.remove();
+}
+
+/* ========== Overdue checking ========== */
+
+function checkOverdueForElement(li, task) {
+if (!task.deadline) return;
+const overdueEl = li.querySelector('.overdue');
+const checkbox = li.querySelector('input[type="checkbox"]');
+if (!overdueEl || checkbox.checked) {
+if (overdueEl) overdueEl.style.display = 'none';
+return;
+}
+const today = todayISO();
+// compare ISO strings (yyyy-mm-dd)
+overdueEl.style.display = (today > task.deadline) ? 'block' : 'none';
+}
+
+function checkAllOverdues() {
+['do','schedule','delegate'].forEach(panel => {
+state[panel].forEach(task => {
+const li = document.querySelector(`#list-${panel} li[data-id="${task.id}"]`);
+if (li) checkOverdueForElement(li, task);
+});
+});
+}
+
+/* ========== Initialization ========== */
+
+function init() {
+// first render from state
+renderAll();
+
+// periodic overdue check (every 30 seconds)
+setInterval(checkAllOverdues, 30000);
+
+// also check immediately in case deadlines passed while page was closed
+checkAllOverdues();
+
+// optional: clear storage button (uncomment if needed)
+// addClearStorageButton();
+}
+
+// helper for debugging / clearing storage if you want (not shown by default)
+function addClearStorageButton() {
+const b = document.createElement('button');
+b.textContent = 'Clear all saved tasks';
+b.className = 'small-btn clear-btn';
+b.addEventListener('click', () => {
+if (!confirm('Clear all saved tasks?')) return;
+localStorage.removeItem(STORAGE_KEY);
+state = JSON.parse(JSON.stringify(defaultData));
+renderAll();
+});
+document.body.appendChild(b);
+}
+
+// start
+init();
+
+</script>
+</body>
+</html>
